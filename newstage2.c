@@ -276,8 +276,10 @@ int main()
 				str_free(arguments);
 				arguments = NULL;
 				n = 0;
-				s = realloc(s, n + 2);
+				s = realloc(s, n + 1);
 				s[n] = 0;
+				fn_flag=0;
+				while (getchar()!='\n');
 				continue;
 			}
 
