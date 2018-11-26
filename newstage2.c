@@ -181,7 +181,7 @@ pid_list run_process(str_list strings, pid_list pids)
 	if (check_cd(strings))
 		return pids;
 
-	args = malloc((nargs + 1) * sizeof(nargs));
+	args = malloc((nargs + 1) * sizeof(char*));
 	nargs = 0;
 	while (strings != NULL)
 	{
@@ -239,12 +239,30 @@ pid_list run_process(str_list strings, pid_list pids)
 	return pids;
 }
 
+void kill_background_processes(pid_list pids)
+{
+	pid_list iter = check_background_processes( pids ); //проверим вдруг ктото уже завершился
+
+	//остальных прибъем сигналом SIGKILL
+	while( iter )
+	{
+		if( kill( iter->pid, SIGKILL ) != 0 )
+			fprintf( stderr, "Can't kill process pid=%d: %s!\n", iter->pid, strerror( errno ) );
+
+		iter = iter->next;
+	}
+
+	//проверим что все убитые завершились
+	while( (pids = check_background_processes( pids )) != NULL )
+		usleep( 10000 );
+}
+
 int main()
 {
-	pid_list fnlis = NULL;
+	pid_list background_pids = NULL;
+	str_list arguments = NULL;
 	char c;
 	int n = 0;
-	str_list L = NULL;
 	int fn_flag = 0;
 	char *s = (char*) calloc(1, sizeof(char));
 
@@ -255,10 +273,10 @@ int main()
 			if (fn_flag)
 			{
 				fprintf( stderr, "\nWrong position of '&'!\n");
-				str_free(L);
-				L = NULL;
+				str_free(arguments);
+				arguments = NULL;
 				n = 0;
-				s = realloc(s, n + 1);
+				s = realloc(s, n + 2);
 				s[n] = 0;
 				continue;
 			}
@@ -273,14 +291,14 @@ int main()
 						printf("problem\n");
 						return 1;
 					}
-					s = realloc(s, n + 1);
+					s = realloc(s, n + 2);
 					s[n++] = c;
 					s[n] = 0;
 				}
 			}
 			else if (c != ' ')
 			{
-				s = realloc(s, n + 1);
+				s = realloc(s, n + 2);
 				s[n++] = c;
 				s[n] = 0;
 				if (c == '&')
@@ -290,7 +308,7 @@ int main()
 			}
 			else
 			{
-				L = str_add(L, s);
+				arguments = str_add(arguments, s);
 				n = 0;
 				s = realloc(s, n + 1);
 				s[0] = 0;
@@ -299,17 +317,17 @@ int main()
 		else
 		{
 			if (strlen(s) != 0)  // если не внесли в список последнее слово
-				L = str_add(L, s);
+				arguments = str_add(arguments, s);
 
-			if (L != NULL)
+			if (arguments != NULL)
 			{                 // переносим все аргументы в массив
 
-				fnlis = run_process(L, fnlis);
-				str_free(L);
-				L = NULL;
+				background_pids = run_process(arguments, background_pids);
+				str_free(arguments);
+				arguments = NULL;
 			}
 
-			fnlis = check_background_processes(fnlis);
+			background_pids = check_background_processes(background_pids);
 			n = 0;
 			s = realloc(s, n + 1);
 			s[0] = 0;
@@ -318,5 +336,11 @@ int main()
 	}
 
 	free(s);
+
+	str_free(arguments);
+
+	kill_background_processes(background_pids);
+
+	return 0;
 }
 
