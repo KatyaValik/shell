@@ -21,6 +21,16 @@ struct pid_node
 	pid_list next;
 };
 
+typedef struct one_command *shell;
+struct one_command {
+	str_list comand;
+	char* input;
+	char* output;
+	char* output_add;
+	int fn;
+	shell next_command;
+};
+
 /*Добавляет эелемент списка*/
 pid_list pid_add(pid_list list, pid_t pid)
 {
@@ -126,10 +136,32 @@ int str_size(str_list list)
 	return size;
 }
 
+shell make_shell(str_list L, shell Sh) {
+	str_list Lst=L;
+	while (L!=NULL) {
+		if (L->str=='>'){
+			shell->output=L->next->str;
+			L=L->next->next;
+		}
+		else if (L->str=='<'){
+			shell->input=L->next->str;
+			L=L->next->next;
+		}
+		else if (L->str=='>>'){
+			shell->output_add=L->str;
+			L=L->next->next;
+		}
+		else if ()
+	}
+	return Sh;
+}
+
+
+
+
 int check_cd(str_list strings)
 {
-	char* dir = "~/"; //Домашний каталог по умолчанию, если cd без аргументов
-
+	char* dir; //Домашний каталог по умолчанию, если cd без аргументов
 	if (strings == NULL)
 		return 0;
 
@@ -140,6 +172,8 @@ int check_cd(str_list strings)
 	{
 		dir = strings->next->str;
 	}
+	else
+		return 0;
 
 	if (chdir(dir) != 0)
 	{
@@ -241,30 +275,35 @@ pid_list run_process(str_list strings, pid_list pids)
 
 void kill_background_processes(pid_list pids)
 {
-	pid_list iter = check_background_processes( pids ); //проверим вдруг ктото уже завершился
+	pid_list iter = check_background_processes(pids); //проверим вдруг ктото уже завершился
 
 	//остальных прибъем сигналом SIGKILL
-	while( iter )
+	while (iter)
 	{
-		if( kill( iter->pid, SIGKILL ) != 0 )
-			fprintf( stderr, "Can't kill process pid=%d: %s!\n", iter->pid, strerror( errno ) );
+		if (kill(iter->pid, SIGKILL) != 0)
+			fprintf( stderr, "Can't kill process pid=%d: %s!\n", iter->pid, strerror( errno));
 
 		iter = iter->next;
 	}
 
 	//проверим что все убитые завершились
-	while( (pids = check_background_processes( pids )) != NULL )
-		usleep( 10000 );
+	while ((pids = check_background_processes(pids)) != NULL)
+		usleep(10000);
 }
 
 int main()
 {
+	shell Sh=NULL;
 	pid_list background_pids = NULL;
 	str_list arguments = NULL;
 	char c;
 	int n = 0;
 	int fn_flag = 0;
+	int arrow_flag = 0;
 	char *s = (char*) calloc(1, sizeof(char));
+	char arrow[2];
+	arrow[0] = '>';
+	arrow[1] = 0;
 
 	while ((c = getchar()) != EOF)
 	{                     //читаю слова
@@ -278,8 +317,9 @@ int main()
 				n = 0;
 				s = realloc(s, n + 1);
 				s[n] = 0;
-				fn_flag=0;
-				while (getchar()!='\n');
+				fn_flag = 0;
+				while (getchar() != '\n')
+					;
 				continue;
 			}
 
@@ -300,48 +340,136 @@ int main()
 			}
 			else if (c != ' ')
 			{
-				s = realloc(s, n + 2);
-				s[n++] = c;
-				s[n] = 0;
-				if (c == '&')
+				if (arrow_flag)
 				{
-					fn_flag = 1;
+					if (c == '>')
+					{
+						n = 2;
+						s = realloc(s, n + 1);
+						s[0] = '>';
+						s[1] = '>';
+						s[2] = 0;
+						arguments = str_add(arguments, s);
+						n = 0;
+						s = realloc(s, n + 1);
+						s[0] = 0;
+						arrow_flag = 0;
+					}
+					else
+					{
+						arguments = str_add(arguments, arrow);
+						n = 1;
+						s = realloc(s, n + 1);
+						s[0] = c;
+						s[1] = 0;
+						arrow_flag = 0;
+					}
+				}
+				else
+				{
+					if ((c == '|') || (c == '<'))
+					{
+						if (n > 0)
+							arguments = str_add(arguments, s);
+						n = 1;
+						s = realloc(s, n + 1);
+						s[n] = 0;
+						s[0] = c;
+						arguments = str_add(arguments, s);
+						n = 0;
+						s = realloc(s, n + 1);
+						s[0] = 0;
+
+					}
+					else if (c == '>')
+					{
+						if (n>0) arguments = str_add(arguments, s);
+						n = 0;
+						s = realloc(s, n + 1);
+						s[0] = 0;
+						arrow_flag = 1;
+					}
+					else
+					{
+						s = realloc(s, n + 2);
+						s[n++] = c;
+						s[n] = 0;
+					}
+					if (c == '&')
+					{
+						fn_flag = 1;
+					}
 				}
 			}
+
 			else
 			{
-				arguments = str_add(arguments, s);
-				n = 0;
-				s = realloc(s, n + 1);
-				s[0] = 0;
+				if ((!arrow_flag) && (n > 0))
+
+				{
+					arguments = str_add(arguments, s);
+					n = 0;
+					s = realloc(s, n + 1);
+					s[0] = 0;
+				}
+				else if (strlen(s) > 0)
+				{
+					n = 1;
+					s = realloc(s, n + 1);
+					s[0] = '>';
+					s[n] = 0;
+					arguments = str_add(arguments, s);
+					n = 0;
+					s = realloc(s, n + 1);
+					s[0] = 0;
+					arrow_flag = 0;
+				}
+
 			}
 		}
 		else
 		{
+			if (arrow_flag)
+			{
+				arguments = str_add(arguments, arrow);
+				arrow_flag = 0;
+			}
 			if (strlen(s) != 0)  // если не внесли в список последнее слово
 				arguments = str_add(arguments, s);
-
-			if (arguments != NULL)
-			{                 // переносим все аргументы в массив
-
-				background_pids = run_process(arguments, background_pids);
-				str_free(arguments);
-				arguments = NULL;
-			}
-
-			background_pids = check_background_processes(background_pids);
 			n = 0;
 			s = realloc(s, n + 1);
 			s[0] = 0;
-			fn_flag = 0;
 		}
 	}
+	if (arguments !=NULL)
+		Sh=make_shell(arguments,Sh);
+	while (arguments != NULL)
+	{
+		printf("%s\n", arguments->str);
+		arguments = arguments->next;
+	}
 
-	free(s);
+	/*if (arguments != NULL)
+	 {                 // переносим все аргументы в массив
 
-	str_free(arguments);
+	 background_pids = run_process(arguments, background_pids);
+	 str_free(arguments);
+	 arguments = NULL;
+	 }
 
-	kill_background_processes(background_pids);
+	 background_pids = check_background_processes(background_pids);
+	 n = 0;
+	 s = realloc(s, n + 1);
+	 s[0] = 0;
+	 fn_flag = 0;
+	 }
+	 }
+
+	 free(s);
+
+	 str_free(arguments);
+
+	 kill_background_processes(background_pids);*/
 
 	return 0;
 }
