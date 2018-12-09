@@ -92,6 +92,7 @@ void pid_free(pid_list list)
 	free(list);
 }
 
+/*добавляет элемент списка*/
 str_list str_add(str_list list, const char* str)
 {
 	str_list iter = list;
@@ -124,6 +125,17 @@ void str_free(str_list list)
 	free(list);
 }
 
+/*печать списка*/
+void print_list(str_list L)
+{
+	str_list Lst = L;
+	while (L != NULL)
+	{
+		printf("%s  ", L->str);
+		L = L->next;
+	}
+	L = Lst;
+}
 int str_size(str_list list)
 {
 	int size = 0;
@@ -137,356 +149,352 @@ int str_size(str_list list)
 	return size;
 }
 
+/*удаление структуры shell*/
+void shell_free(shell Sh)
+{
+	if (Sh == NULL)
+		return;
+	shell_free(Sh->next_command);
+	str_free(Sh->comand);
+	free(Sh->input);
+	free(Sh->output);
+	free(Sh->output_add);
+}
+
+/*разбор строки на слова*/
+int make_arguments(str_list* list, char* str)
+{
+	char* special_symbols[] =
+	{ ">>", ">", "<", "&", "|", "`" };
+	int position = 0;
+	int n = 0;
+	int ret = 0;
+	char* str1 = (char*) calloc(1, strlen(str) + 1);
+	str_list L = *list;
+
+	while (str[position] != 0)
+	{
+		int is_special = 0;
+
+		for (int i = 0; i < sizeof(special_symbols) / sizeof(special_symbols[0]); i++)
+		{
+			if (strncmp(str + position, special_symbols[i], strlen(special_symbols[i])) == 0)
+			{
+				if (n > 0)
+					L = str_add(L, str1);
+				n = 0;
+				memset(str1, 0, strlen(str) + 1);
+				position += strlen(special_symbols[i]);
+				L = str_add(L, special_symbols[i]);
+				is_special = 1;
+				break;
+			}
+		}
+
+		if (is_special)
+			continue;
+
+		if ((str[position] == ' ') || (str[position] == '\n'))
+		{
+			if (n > 0)
+				L = str_add(L, str1);
+			n = 0;
+			memset(str1, 0, strlen(str) + 1);
+			position++;
+		}
+		else if (str[position] == '"')
+		{
+			int save_position = position;
+			position++;
+			while (str[position] != 0)
+			{
+				if (str[position] != '"')
+				{
+					str1[n++] = str[position++];
+				}
+				else
+				{
+					position++;
+					break;
+				}
+			}
+
+			if (str[position] == 0)
+			{
+				memmove(str, str + save_position, strlen(str + save_position) + 1);
+				ret = 1;
+				break;
+			}
+		}
+		else
+		{
+			str1[n++] = str[position++];
+		}
+	}
+
+	*list = L;
+	free(str1);
+	return ret;
+}
+
+/*создание структуры для выполнения команд*/
 shell make_shell(str_list L)
 {
 	str_list Lst = L;
 	shell Sh = calloc(1, sizeof(struct one_command));
 	shell Sh_next;
 	shell curr_cmd = Sh;
-
+	int str_size;
 	while (L != NULL)
 	{
 		if (strcmp(L->str, ">") == 0)
 		{
-			strcpy(Sh->output, L->next->str);
+			str_size = strlen(L->next->str) + 1;
+			curr_cmd->output = malloc(str_size);
+			memcpy(curr_cmd->output, L->next->str, str_size);
 			L = L->next->next;
 		}
-		else if (strcmp(L->str ,"<")==0)
+		else if (strcmp(L->str, "<") == 0)
 		{
-			strcpy(Sh->input,L->next->str);
+			str_size = strlen(L->next->str) + 1;
+			curr_cmd->output = malloc(str_size);
+			memcpy(curr_cmd->input, L->next->str, str_size);
 			L = L->next->next;
 		}
-		else if (strcmp(L->str ,">>")==0)
+		else if (strcmp(L->str, ">>") == 0)
 		{
-			strcpy(Sh->output_add ,L->next->str);
+			str_size = strlen(L->next->str) + 1;
+			curr_cmd->output = malloc(str_size);
+			memcpy(curr_cmd->output_add, L->next->str, str_size);
 			L = L->next->next;
 		}
-		else if (strcmp(L->str,"&")==0)
+		else if (strcmp(L->str, "&") == 0)
 		{
-			Sh->fn=1;
+			//curr_cmd->fn=malloc(sizeof(int));
+			curr_cmd->fn = 1;
 			L = L->next;
 		}
-		else if (strcmp(L->str,"|")==0)
+		else if (strcmp(L->str, "|") == 0)
 		{
 			Sh_next = calloc(1, sizeof(struct one_command));
-		}
-	}
-return Sh;
-
-}
-
-	int check_cd(str_list strings)
-	{
-		char* dir; //Домашний каталог по умолчанию, если cd без аргументов
-		if (strings == NULL)
-			return 0;
-
-		if (strcmp(strings->str, "cd") != 0)
-			return 0;
-
-		if (strings->next != NULL)
-		{
-			dir = strings->next->str;
+			curr_cmd->next_command = Sh_next;
+			curr_cmd = curr_cmd->next_command;
 		}
 		else
-			return 0;
-
-		if (chdir(dir) != 0)
 		{
-			fprintf( stderr, "cd: \"%s\": %s\n", strings->next->str, strerror( errno));
+			curr_cmd->comand = str_add(curr_cmd->comand, L->str);
+			L = L->next;
 		}
+	}
+	str_free(L);
+	return Sh;
+}
 
-		return 1;
+/*печатает структуры shell*/
+void print_shell(shell Sh)
+{
+	shell Sh_start = Sh;
+	while (Sh != NULL)
+	{
+		print_list(Sh->comand);
+		printf("\n");
+		if (Sh->input != NULL)
+			printf("%s\n", Sh->input);
+		if (Sh->output != NULL)
+			printf("%s\n", Sh->output);
+		if (Sh->output_add != NULL)
+			printf("%s\n", Sh->output_add);
+		printf("%d\n", Sh->fn);
+		Sh = Sh->next_command;
+	}
+	Sh = Sh_start;
+}
+
+int check_cd(str_list strings)
+{
+	char* dir; //Домашний каталог по умолчанию, если cd без аргументов
+	if (strings == NULL)
+		return 0;
+
+	if (strcmp(strings->str, "cd") != 0)
+		return 0;
+
+	if (strings->next != NULL)
+	{
+		dir = strings->next->str;
+	}
+	else
+		return 0;
+
+	if (chdir(dir) != 0)
+	{
+		fprintf( stderr, "cd: \"%s\": %s\n", strings->next->str, strerror( errno));
 	}
 
-	pid_list check_background_processes(pid_list list)
-	{
-		pid_t pid;
-		int status;
+	return 1;
+}
 
-		while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
+/*проверка завершенных фоновых процессов*/
+pid_list check_background_processes(pid_list list)
+{
+	pid_t pid;
+	int status;
+
+	while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
+	{
+		if (WIFEXITED(status))
 		{
+			list = pid_del(list, pid);
+			printf("process with PID=%d finished with status %d\n", pid, WEXITSTATUS(status));
+		}
+		else if (WIFSIGNALED(status))
+		{
+			list = pid_del(list, pid);
+			printf("process with PID=%d terminated by signal %d\n", pid, WTERMSIG(status));
+		}
+	}
+
+	return list;
+}
+
+/*выполнение команды*/
+pid_list run_process(str_list strings, pid_list pids)
+{
+	char** args;
+	int nargs = str_size(strings);
+	int background = 0;
+	pid_t pid;
+
+	if (check_cd(strings))
+		return pids;
+
+	args = malloc((nargs + 1) * sizeof(char*));
+	nargs = 0;
+	while (strings != NULL)
+	{
+		args[nargs] = strings->str;
+		nargs++;
+		strings = strings->next;
+	}
+
+	if (strcmp(args[nargs - 1], "&") == 0)
+	{
+		nargs--;
+		background = 1;
+	}
+
+	args[nargs] = NULL;
+
+	pid = fork();
+	if (!pid)
+	{
+
+		execvp(args[0], args);
+		fprintf( stderr, "Error executing %s: %s\n", args[0], strerror( errno));
+		exit(1);
+	}
+
+	if (background)
+	{
+		pids = pid_add(pids, pid);
+		printf("running the background process with PID=%d\n", pid);
+	}
+	else
+	{
+		int status;
+		pid_t ret;
+
+		while ((ret = waitpid(pid, &status, 0)) >= 0)
+		{
+			if (ret != pid)
+				continue;
+
 			if (WIFEXITED(status))
 			{
-				list = pid_del(list, pid);
-				printf("process with PID=%d finished with status %d\n", pid, WEXITSTATUS(status));
+				break;
 			}
 			else if (WIFSIGNALED(status))
 			{
-				list = pid_del(list, pid);
-				printf("process with PID=%d terminated by signal %d\n", pid, WTERMSIG(status));
+				printf("process with terminated by signal %d\n", WTERMSIG(status));
+				break;
 			}
 		}
-
-		return list;
 	}
 
-	pid_list run_process(str_list strings, pid_list pids)
+	free(args);
+
+	return pids;
+}
+
+/*прибить фоновые процессы*/
+void kill_background_processes(pid_list pids)
+{
+	pid_list iter = check_background_processes(pids); //проверим вдруг ктото уже завершился
+
+	//остальных прибъем сигналом SIGKILL
+	while (iter)
 	{
-		char** args;
-		int nargs = str_size(strings);
-		int background = 0;
-		pid_t pid;
+		if (kill(iter->pid, SIGKILL) != 0)
+			fprintf( stderr, "Can't kill process pid=%d: %s!\n", iter->pid, strerror( errno));
 
-		if (check_cd(strings))
-			return pids;
-
-		args = malloc((nargs + 1) * sizeof(char*));
-		nargs = 0;
-		while (strings != NULL)
-		{
-			args[nargs] = strings->str;
-			nargs++;
-			strings = strings->next;
-		}
-
-		if (strcmp(args[nargs - 1], "&") == 0)
-		{
-			nargs--;
-			background = 1;
-		}
-
-		args[nargs] = NULL;
-
-		pid = fork();
-		if (!pid)
-		{
-
-			execvp(args[0], args);
-			fprintf( stderr, "Error executing %s: %s\n", args[0], strerror( errno));
-			exit(1);
-		}
-
-		if (background)
-		{
-			pids = pid_add(pids, pid);
-			printf("running the background process with PID=%d\n", pid);
-		}
-		else
-		{
-			int status;
-			pid_t ret;
-
-			while ((ret = waitpid(pid, &status, 0)) >= 0)
-			{
-				if (ret != pid)
-					continue;
-
-				if (WIFEXITED(status))
-				{
-					break;
-				}
-				else if (WIFSIGNALED(status))
-				{
-					printf("process with terminated by signal %d\n", WTERMSIG(status));
-					break;
-				}
-			}
-		}
-
-		free(args);
-
-		return pids;
+		iter = iter->next;
 	}
 
-	void kill_background_processes(pid_list pids)
+	//проверим что все убитые завершились
+	while ((pids = check_background_processes(pids)) != NULL)
+		usleep(10000);
+}
+
+int main()
+{
+	shell Sh = NULL;
+	pid_list background_pids = NULL;
+	str_list arguments = NULL;
+	char c;
+	int n = 0;
+	char* str = (char*) calloc(1, sizeof(char));
+	char tmp_str[5];
+
+	while (fgets(tmp_str, sizeof(tmp_str), stdin) != NULL)
 	{
-		pid_list iter = check_background_processes(pids); //проверим вдруг ктото уже завершился
+		int len = strlen(tmp_str);
 
-		//остальных прибъем сигналом SIGKILL
-		while (iter)
+		str = realloc(str, strlen(str) + len + 1);
+		strcat(str, tmp_str);
+		if (tmp_str[len - 1] == '\n')
 		{
-			if (kill(iter->pid, SIGKILL) != 0)
-				fprintf( stderr, "Can't kill process pid=%d: %s!\n", iter->pid, strerror( errno));
-
-			iter = iter->next;
-		}
-
-		//проверим что все убитые завершились
-		while ((pids = check_background_processes(pids)) != NULL)
-			usleep(10000);
-	}
-
-	int main()
-	{
-		shell Sh = NULL;
-		pid_list background_pids = NULL;
-		str_list arguments = NULL;
-		char c;
-		int n = 0;
-		int fn_flag = 0;
-		int arrow_flag = 0;
-		char *s = (char*) calloc(1, sizeof(char));
-		char arrow[2];
-		arrow[0] = '>';
-		arrow[1] = 0;
-
-		while ((c = getchar()) != EOF)
-		{                     //читаю слова
-			if (c != '\n')
+			if (make_arguments(&arguments, str) == 0)
 			{
-				if (fn_flag)
-				{
-					fprintf( stderr, "\nWrong position of '&'!\n");
-					str_free(arguments);
-					arguments = NULL;
-					n = 0;
-					s = realloc(s, n + 1);
-					s[n] = 0;
-					fn_flag = 0;
-					while (getchar() != '\n')
-						;
-					continue;
-				}
-
-				if (c == '"')
-				{
-					while ((c = getchar()) != '"')
-					{
-						if (c == EOF)
-						{
-							printf("\n");
-							printf("problem\n");
-							return 1;
-						}
-						s = realloc(s, n + 2);
-						s[n++] = c;
-						s[n] = 0;
-					}
-				}
-				else if (c != ' ')
-				{
-					if (arrow_flag)
-					{
-						if (c == '>')
-						{
-							n = 2;
-							s = realloc(s, n + 1);
-							s[0] = '>';
-							s[1] = '>';
-							s[2] = 0;
-							arguments = str_add(arguments, s);
-							n = 0;
-							s = realloc(s, n + 1);
-							s[0] = 0;
-							arrow_flag = 0;
-						}
-						else
-						{
-							arguments = str_add(arguments, arrow);
-							n = 1;
-							s = realloc(s, n + 1);
-							s[0] = c;
-							s[1] = 0;
-							arrow_flag = 0;
-						}
-					}
-					else
-					{
-						if ((c == '|') || (c == '<'))
-						{
-							if (n > 0)
-								arguments = str_add(arguments, s);
-							n = 1;
-							s = realloc(s, n + 1);
-							s[n] = 0;
-							s[0] = c;
-							arguments = str_add(arguments, s);
-							n = 0;
-							s = realloc(s, n + 1);
-							s[0] = 0;
-
-						}
-						else if (c == '>')
-						{
-							if (n > 0)
-								arguments = str_add(arguments, s);
-							n = 0;
-							s = realloc(s, n + 1);
-							s[0] = 0;
-							arrow_flag = 1;
-						}
-						else
-						{
-							s = realloc(s, n + 2);
-							s[n++] = c;
-							s[n] = 0;
-						}
-						if (c == '&')
-						{
-							fn_flag = 1;
-						}
-					}
-				}
-
-				else
-				{
-					if ((!arrow_flag) && (n > 0))
-
-					{
-						arguments = str_add(arguments, s);
-						n = 0;
-						s = realloc(s, n + 1);
-						s[0] = 0;
-					}
-					else if (strlen(s) > 0)
-					{
-						n = 1;
-						s = realloc(s, n + 1);
-						s[0] = '>';
-						s[n] = 0;
-						arguments = str_add(arguments, s);
-						n = 0;
-						s = realloc(s, n + 1);
-						s[0] = 0;
-						arrow_flag = 0;
-					}
-
-				}
-			}
-			else
-			{
-				if (arrow_flag)
-				{
-					arguments = str_add(arguments, arrow);
-					arrow_flag = 0;
-				}
-				if (strlen(s) != 0)  // если не внесли в список последнее слово
-					arguments = str_add(arguments, s);
-				n = 0;
-				s = realloc(s, n + 1);
-				s[0] = 0;
+				free(str);
+				str = (char*) calloc(1, sizeof(char));
+				if (arguments != NULL)
+					Sh = make_shell(arguments);
+				//print_shell(Sh);
+				//str_free(arguments);
+				//shell_free(Sh);
 			}
 		}
-		//if (arguments !=NULL)
-		//Sh=make_shell(arguments,Sh);
-		while (arguments != NULL)
-		{
-			printf("%s\n", arguments->str);
-			arguments = arguments->next;
-		}
-
-		/*if (arguments != NULL)
-		 {                 // переносим все аргументы в массив
-
-		 background_pids = run_process(arguments, background_pids);
-		 str_free(arguments);
-		 arguments = NULL;
-		 }
-
-		 background_pids = check_background_processes(background_pids);
-		 n = 0;
-		 s = realloc(s, n + 1);
-		 s[0] = 0;
-		 fn_flag = 0;
-		 }
-		 }
-
-		 free(s);
-
-		 str_free(arguments);
-
-		 kill_background_processes(background_pids);*/
-
-		return 0;
 	}
+
+	/*if (arguments != NULL)
+	 {                 // переносим все аргументы в массив
+
+	 background_pids = run_process(arguments, background_pids);
+	 str_free(arguments);
+	 arguments = NULL;
+	 }
+
+	 background_pids = check_background_processes(background_pids);
+	 n = 0;
+	 s = realloc(s, n + 1);
+	 s[0] = 0;
+	 fn_flag = 0;
+
+	 free(s);
+
+	 str_free(arguments);
+
+	 kill_background_processes(background_pids);*/
+
+	return 0;
+}
