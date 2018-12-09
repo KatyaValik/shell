@@ -22,7 +22,8 @@ struct pid_node
 };
 
 typedef struct one_command *shell;
-struct one_command {
+struct one_command
+{
 	str_list comand;
 	char* input;
 	char* output;
@@ -136,340 +137,356 @@ int str_size(str_list list)
 	return size;
 }
 
-shell make_shell(str_list L, shell Sh) {
-	str_list Lst=L;
-	while (L!=NULL) {
-		if (L->str=='>'){
-			shell->output=L->next->str;
-			L=L->next->next;
-		}
-		else if (L->str=='<'){
-			shell->input=L->next->str;
-			L=L->next->next;
-		}
-		else if (L->str=='>>'){
-			shell->output_add=L->str;
-			L=L->next->next;
-		}
-		else if ()
-	}
-	return Sh;
-}
-
-
-
-
-int check_cd(str_list strings)
+shell make_shell(str_list L)
 {
-	char* dir; //Домашний каталог по умолчанию, если cd без аргументов
-	if (strings == NULL)
-		return 0;
+	str_list Lst = L;
+	shell Sh = calloc(1, sizeof(struct one_command));
+	shell Sh_next;
+	shell curr_cmd = Sh;
 
-	if (strcmp(strings->str, "cd") != 0)
-		return 0;
-
-	if (strings->next != NULL)
+	while (L != NULL)
 	{
-		dir = strings->next->str;
-	}
-	else
-		return 0;
-
-	if (chdir(dir) != 0)
-	{
-		fprintf( stderr, "cd: \"%s\": %s\n", strings->next->str, strerror( errno));
-	}
-
-	return 1;
-}
-
-pid_list check_background_processes(pid_list list)
-{
-	pid_t pid;
-	int status;
-
-	while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
-	{
-		if (WIFEXITED(status))
+		if (strcmp(L->str, ">") == 0)
 		{
-			list = pid_del(list, pid);
-			printf("process with PID=%d finished with status %d\n", pid, WEXITSTATUS(status));
+			strcpy(Sh->output, L->next->str);
+			L = L->next->next;
 		}
-		else if (WIFSIGNALED(status))
+		else if (strcmp(L->str ,"<")==0)
 		{
-			list = pid_del(list, pid);
-			printf("process with PID=%d terminated by signal %d\n", pid, WTERMSIG(status));
+			strcpy(Sh->input,L->next->str);
+			L = L->next->next;
+		}
+		else if (strcmp(L->str ,">>")==0)
+		{
+			strcpy(Sh->output_add ,L->next->str);
+			L = L->next->next;
+		}
+		else if (strcmp(L->str,"&")==0)
+		{
+			Sh->fn=1;
+			L = L->next;
+		}
+		else if (strcmp(L->str,"|")==0)
+		{
+			Sh_next = calloc(1, sizeof(struct one_command));
 		}
 	}
+return Sh;
 
-	return list;
 }
 
-pid_list run_process(str_list strings, pid_list pids)
-{
-	char** args;
-	int nargs = str_size(strings);
-	int background = 0;
-	pid_t pid;
-
-	if (check_cd(strings))
-		return pids;
-
-	args = malloc((nargs + 1) * sizeof(char*));
-	nargs = 0;
-	while (strings != NULL)
+	int check_cd(str_list strings)
 	{
-		args[nargs] = strings->str;
-		nargs++;
-		strings = strings->next;
+		char* dir; //Домашний каталог по умолчанию, если cd без аргументов
+		if (strings == NULL)
+			return 0;
+
+		if (strcmp(strings->str, "cd") != 0)
+			return 0;
+
+		if (strings->next != NULL)
+		{
+			dir = strings->next->str;
+		}
+		else
+			return 0;
+
+		if (chdir(dir) != 0)
+		{
+			fprintf( stderr, "cd: \"%s\": %s\n", strings->next->str, strerror( errno));
+		}
+
+		return 1;
 	}
 
-	if (strcmp(args[nargs - 1], "&") == 0)
+	pid_list check_background_processes(pid_list list)
 	{
-		nargs--;
-		background = 1;
-	}
-
-	args[nargs] = NULL;
-
-	pid = fork();
-	if (!pid)
-	{
-
-		execvp(args[0], args);
-		fprintf( stderr, "Error executing %s: %s\n", args[0], strerror( errno));
-		exit(1);
-	}
-
-	if (background)
-	{
-		pids = pid_add(pids, pid);
-		printf("running the background process with PID=%d\n", pid);
-	}
-	else
-	{
+		pid_t pid;
 		int status;
-		pid_t ret;
 
-		while ((ret = waitpid(pid, &status, 0)) >= 0)
+		while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
 		{
-			if (ret != pid)
-				continue;
-
 			if (WIFEXITED(status))
 			{
-				break;
+				list = pid_del(list, pid);
+				printf("process with PID=%d finished with status %d\n", pid, WEXITSTATUS(status));
 			}
 			else if (WIFSIGNALED(status))
 			{
-				printf("process with terminated by signal %d\n", WTERMSIG(status));
-				break;
+				list = pid_del(list, pid);
+				printf("process with PID=%d terminated by signal %d\n", pid, WTERMSIG(status));
 			}
 		}
+
+		return list;
 	}
 
-	free(args);
-
-	return pids;
-}
-
-void kill_background_processes(pid_list pids)
-{
-	pid_list iter = check_background_processes(pids); //проверим вдруг ктото уже завершился
-
-	//остальных прибъем сигналом SIGKILL
-	while (iter)
+	pid_list run_process(str_list strings, pid_list pids)
 	{
-		if (kill(iter->pid, SIGKILL) != 0)
-			fprintf( stderr, "Can't kill process pid=%d: %s!\n", iter->pid, strerror( errno));
+		char** args;
+		int nargs = str_size(strings);
+		int background = 0;
+		pid_t pid;
 
-		iter = iter->next;
+		if (check_cd(strings))
+			return pids;
+
+		args = malloc((nargs + 1) * sizeof(char*));
+		nargs = 0;
+		while (strings != NULL)
+		{
+			args[nargs] = strings->str;
+			nargs++;
+			strings = strings->next;
+		}
+
+		if (strcmp(args[nargs - 1], "&") == 0)
+		{
+			nargs--;
+			background = 1;
+		}
+
+		args[nargs] = NULL;
+
+		pid = fork();
+		if (!pid)
+		{
+
+			execvp(args[0], args);
+			fprintf( stderr, "Error executing %s: %s\n", args[0], strerror( errno));
+			exit(1);
+		}
+
+		if (background)
+		{
+			pids = pid_add(pids, pid);
+			printf("running the background process with PID=%d\n", pid);
+		}
+		else
+		{
+			int status;
+			pid_t ret;
+
+			while ((ret = waitpid(pid, &status, 0)) >= 0)
+			{
+				if (ret != pid)
+					continue;
+
+				if (WIFEXITED(status))
+				{
+					break;
+				}
+				else if (WIFSIGNALED(status))
+				{
+					printf("process with terminated by signal %d\n", WTERMSIG(status));
+					break;
+				}
+			}
+		}
+
+		free(args);
+
+		return pids;
 	}
 
-	//проверим что все убитые завершились
-	while ((pids = check_background_processes(pids)) != NULL)
-		usleep(10000);
-}
+	void kill_background_processes(pid_list pids)
+	{
+		pid_list iter = check_background_processes(pids); //проверим вдруг ктото уже завершился
 
-int main()
-{
-	shell Sh=NULL;
-	pid_list background_pids = NULL;
-	str_list arguments = NULL;
-	char c;
-	int n = 0;
-	int fn_flag = 0;
-	int arrow_flag = 0;
-	char *s = (char*) calloc(1, sizeof(char));
-	char arrow[2];
-	arrow[0] = '>';
-	arrow[1] = 0;
-
-	while ((c = getchar()) != EOF)
-	{                     //читаю слова
-		if (c != '\n')
+		//остальных прибъем сигналом SIGKILL
+		while (iter)
 		{
-			if (fn_flag)
-			{
-				fprintf( stderr, "\nWrong position of '&'!\n");
-				str_free(arguments);
-				arguments = NULL;
-				n = 0;
-				s = realloc(s, n + 1);
-				s[n] = 0;
-				fn_flag = 0;
-				while (getchar() != '\n')
-					;
-				continue;
-			}
+			if (kill(iter->pid, SIGKILL) != 0)
+				fprintf( stderr, "Can't kill process pid=%d: %s!\n", iter->pid, strerror( errno));
 
-			if (c == '"')
+			iter = iter->next;
+		}
+
+		//проверим что все убитые завершились
+		while ((pids = check_background_processes(pids)) != NULL)
+			usleep(10000);
+	}
+
+	int main()
+	{
+		shell Sh = NULL;
+		pid_list background_pids = NULL;
+		str_list arguments = NULL;
+		char c;
+		int n = 0;
+		int fn_flag = 0;
+		int arrow_flag = 0;
+		char *s = (char*) calloc(1, sizeof(char));
+		char arrow[2];
+		arrow[0] = '>';
+		arrow[1] = 0;
+
+		while ((c = getchar()) != EOF)
+		{                     //читаю слова
+			if (c != '\n')
 			{
-				while ((c = getchar()) != '"')
+				if (fn_flag)
 				{
-					if (c == EOF)
-					{
-						printf("\n");
-						printf("problem\n");
-						return 1;
-					}
-					s = realloc(s, n + 2);
-					s[n++] = c;
+					fprintf( stderr, "\nWrong position of '&'!\n");
+					str_free(arguments);
+					arguments = NULL;
+					n = 0;
+					s = realloc(s, n + 1);
 					s[n] = 0;
+					fn_flag = 0;
+					while (getchar() != '\n')
+						;
+					continue;
 				}
-			}
-			else if (c != ' ')
-			{
-				if (arrow_flag)
-				{
-					if (c == '>')
-					{
-						n = 2;
-						s = realloc(s, n + 1);
-						s[0] = '>';
-						s[1] = '>';
-						s[2] = 0;
-						arguments = str_add(arguments, s);
-						n = 0;
-						s = realloc(s, n + 1);
-						s[0] = 0;
-						arrow_flag = 0;
-					}
-					else
-					{
-						arguments = str_add(arguments, arrow);
-						n = 1;
-						s = realloc(s, n + 1);
-						s[0] = c;
-						s[1] = 0;
-						arrow_flag = 0;
-					}
-				}
-				else
-				{
-					if ((c == '|') || (c == '<'))
-					{
-						if (n > 0)
-							arguments = str_add(arguments, s);
-						n = 1;
-						s = realloc(s, n + 1);
-						s[n] = 0;
-						s[0] = c;
-						arguments = str_add(arguments, s);
-						n = 0;
-						s = realloc(s, n + 1);
-						s[0] = 0;
 
-					}
-					else if (c == '>')
+				if (c == '"')
+				{
+					while ((c = getchar()) != '"')
 					{
-						if (n>0) arguments = str_add(arguments, s);
-						n = 0;
-						s = realloc(s, n + 1);
-						s[0] = 0;
-						arrow_flag = 1;
-					}
-					else
-					{
+						if (c == EOF)
+						{
+							printf("\n");
+							printf("problem\n");
+							return 1;
+						}
 						s = realloc(s, n + 2);
 						s[n++] = c;
 						s[n] = 0;
 					}
-					if (c == '&')
+				}
+				else if (c != ' ')
+				{
+					if (arrow_flag)
 					{
-						fn_flag = 1;
+						if (c == '>')
+						{
+							n = 2;
+							s = realloc(s, n + 1);
+							s[0] = '>';
+							s[1] = '>';
+							s[2] = 0;
+							arguments = str_add(arguments, s);
+							n = 0;
+							s = realloc(s, n + 1);
+							s[0] = 0;
+							arrow_flag = 0;
+						}
+						else
+						{
+							arguments = str_add(arguments, arrow);
+							n = 1;
+							s = realloc(s, n + 1);
+							s[0] = c;
+							s[1] = 0;
+							arrow_flag = 0;
+						}
+					}
+					else
+					{
+						if ((c == '|') || (c == '<'))
+						{
+							if (n > 0)
+								arguments = str_add(arguments, s);
+							n = 1;
+							s = realloc(s, n + 1);
+							s[n] = 0;
+							s[0] = c;
+							arguments = str_add(arguments, s);
+							n = 0;
+							s = realloc(s, n + 1);
+							s[0] = 0;
+
+						}
+						else if (c == '>')
+						{
+							if (n > 0)
+								arguments = str_add(arguments, s);
+							n = 0;
+							s = realloc(s, n + 1);
+							s[0] = 0;
+							arrow_flag = 1;
+						}
+						else
+						{
+							s = realloc(s, n + 2);
+							s[n++] = c;
+							s[n] = 0;
+						}
+						if (c == '&')
+						{
+							fn_flag = 1;
+						}
 					}
 				}
-			}
 
+				else
+				{
+					if ((!arrow_flag) && (n > 0))
+
+					{
+						arguments = str_add(arguments, s);
+						n = 0;
+						s = realloc(s, n + 1);
+						s[0] = 0;
+					}
+					else if (strlen(s) > 0)
+					{
+						n = 1;
+						s = realloc(s, n + 1);
+						s[0] = '>';
+						s[n] = 0;
+						arguments = str_add(arguments, s);
+						n = 0;
+						s = realloc(s, n + 1);
+						s[0] = 0;
+						arrow_flag = 0;
+					}
+
+				}
+			}
 			else
 			{
-				if ((!arrow_flag) && (n > 0))
-
+				if (arrow_flag)
 				{
-					arguments = str_add(arguments, s);
-					n = 0;
-					s = realloc(s, n + 1);
-					s[0] = 0;
-				}
-				else if (strlen(s) > 0)
-				{
-					n = 1;
-					s = realloc(s, n + 1);
-					s[0] = '>';
-					s[n] = 0;
-					arguments = str_add(arguments, s);
-					n = 0;
-					s = realloc(s, n + 1);
-					s[0] = 0;
+					arguments = str_add(arguments, arrow);
 					arrow_flag = 0;
 				}
-
+				if (strlen(s) != 0)  // если не внесли в список последнее слово
+					arguments = str_add(arguments, s);
+				n = 0;
+				s = realloc(s, n + 1);
+				s[0] = 0;
 			}
 		}
-		else
+		//if (arguments !=NULL)
+		//Sh=make_shell(arguments,Sh);
+		while (arguments != NULL)
 		{
-			if (arrow_flag)
-			{
-				arguments = str_add(arguments, arrow);
-				arrow_flag = 0;
-			}
-			if (strlen(s) != 0)  // если не внесли в список последнее слово
-				arguments = str_add(arguments, s);
-			n = 0;
-			s = realloc(s, n + 1);
-			s[0] = 0;
+			printf("%s\n", arguments->str);
+			arguments = arguments->next;
 		}
+
+		/*if (arguments != NULL)
+		 {                 // переносим все аргументы в массив
+
+		 background_pids = run_process(arguments, background_pids);
+		 str_free(arguments);
+		 arguments = NULL;
+		 }
+
+		 background_pids = check_background_processes(background_pids);
+		 n = 0;
+		 s = realloc(s, n + 1);
+		 s[0] = 0;
+		 fn_flag = 0;
+		 }
+		 }
+
+		 free(s);
+
+		 str_free(arguments);
+
+		 kill_background_processes(background_pids);*/
+
+		return 0;
 	}
-	if (arguments !=NULL)
-		Sh=make_shell(arguments,Sh);
-	while (arguments != NULL)
-	{
-		printf("%s\n", arguments->str);
-		arguments = arguments->next;
-	}
-
-	/*if (arguments != NULL)
-	 {                 // переносим все аргументы в массив
-
-	 background_pids = run_process(arguments, background_pids);
-	 str_free(arguments);
-	 arguments = NULL;
-	 }
-
-	 background_pids = check_background_processes(background_pids);
-	 n = 0;
-	 s = realloc(s, n + 1);
-	 s[0] = 0;
-	 fn_flag = 0;
-	 }
-	 }
-
-	 free(s);
-
-	 str_free(arguments);
-
-	 kill_background_processes(background_pids);*/
-
-	return 0;
-}

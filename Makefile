@@ -1,10 +1,10 @@
 all: shell 
 
 clean:
-	rm -vf shell
+	rm -vf shell reading
 
-reading:
-	gcc reading.c -o reading
+reading: reading.c
+	gcc reading.c -g -o reading
 	
 TARGET = shell	
 SOURCES = newstage2.c
