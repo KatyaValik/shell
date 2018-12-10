@@ -469,7 +469,9 @@ pid_list run_process(shell Sh, pid_list pids)
 	pid = fork();
 	if (!pid)
 	{
-
+		//if ((Sh->input!=NULL)||(Sh->output!=NULL)||(Sh->output_add!=NULL)){
+		//	redir(Sh);
+		//}
 		execvp(args[0], args);
 		fprintf( stderr, "Error executing %s: %s\n", args[0], strerror( errno));
 		exit(1);
@@ -539,8 +541,9 @@ pid_list conv(shell Sh, pid_list background_pids)
 	{
 		background_pids = run_process(Sh, background_pids);
 	}
-	for (int i = 1; i < count; i++)
+	for (int i = 1; i <= count; i++)
 	{
+		if (i!=count) pipe(next);
 		pid = fork();
 		if (!pid)
 		{
@@ -550,7 +553,7 @@ pid_list conv(shell Sh, pid_list background_pids)
 				dup2(pred[0], 0);
 				close(pred[0]); //????
 			}
-			if (i == count - 1)
+			if (i == count)
 			{
 				close(next[0]);
 				dup2(next[1], 1);
@@ -568,12 +571,21 @@ pid_list conv(shell Sh, pid_list background_pids)
 		pred = next;
 		next = tmp;
 	}
-	for (int i = 1; i < count; i++)
+	for (int i = 1; i <= count; i++)
 	{
 		wait(NULL);
 	}
 	return background_pids;
 }
+
+/*перенаправление ввода вывода*/
+/*void redir(shell Sh) {
+	int fd[2];
+	pipe(fd);
+	if (Sh->input!=NULL){
+		dup2(fd[1],1);
+	}
+}*/
 
 int main()
 {
