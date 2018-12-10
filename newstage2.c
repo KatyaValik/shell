@@ -6,6 +6,9 @@
 #include <dirent.h>
 #include <sys/types.h>
 #include <errno.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 typedef struct str_node *str_list;
 struct str_node
@@ -348,6 +351,29 @@ int check_cd(str_list strings)
 	return 1;
 }
 
+
+void redir(shell Sh)
+{
+	int file;
+	if (Sh->input != NULL)
+	{
+		file = open(Sh->input, O_RDONLY);
+		dup2(file, STDIN_FILENO);
+	}
+	if (Sh->output != NULL)
+	{
+		file = open(Sh->output, O_CREAT | O_WRONLY,0660);
+		dup2(file, STDOUT_FILENO);
+	}
+	else if (Sh->output_add != NULL)
+	{
+		file = open(Sh->output_add, O_CREAT | O_APPEND|O_WRONLY,0660);
+		dup2(file, STDOUT_FILENO);
+	}
+
+}
+
+
 /*проверка завершенных фоновых процессов*/
 pid_list check_background_processes(pid_list list)
 {
@@ -468,9 +494,9 @@ pid_list run_process(shell Sh, pid_list pids)
 	pid = fork();
 	if (!pid)
 	{
-		//if ((Sh->input!=NULL)||(Sh->output!=NULL)||(Sh->output_add!=NULL)){
-		//	redir(Sh);
-		//}
+		if ((Sh->input!=NULL)||(Sh->output!=NULL)||(Sh->output_add!=NULL)){
+			redir(Sh);
+		}
 		execvp(args[0], args);
 		fprintf( stderr, "Error executing %s: %s\n", args[0], strerror( errno));
 		exit(1);
@@ -527,6 +553,9 @@ void kill_background_processes(pid_list pids)
 		usleep(10000);
 }
 
+#define READ_ID 0
+#define WRITE_ID 1
+
 /*конвейер*/
 pid_list conv(shell Sh, pid_list background_pids)
 {
@@ -535,49 +564,54 @@ pid_list conv(shell Sh, pid_list background_pids)
 	int *pred = fd;
 	int *next = &fd[2];
 	pid_t pid;
+
 	if (count == 1)
 	{
 		background_pids = run_process(Sh, background_pids);
 		return background_pids;
 
 	}
-	for (int i = 1; i <= count; i++)
+
+	for (int i = 0; i < count; i++)
 	{
-		if (i != count)
+		if (i != (count - 1))
 			pipe(next);
+
 		pid = fork();
+
 		if (!pid)
 		{
-			if (i != 1)
+			if (i != 0)
 			{
-				close(pred[1]);
-				dup2(pred[0], 0);
-				close(pred[0]); //????
+				close(pred[WRITE_ID]);
+				dup2(pred[READ_ID], STDIN_FILENO);
+				//close(pred[READ_ID]);
 			}
-			if (i != count)
+
+			if (i != (count - 1))
 			{
-				close(next[0]);
-				dup2(next[1], 1);
-				close(next[1]);
+				close(next[READ_ID]);
+				dup2(next[WRITE_ID], STDOUT_FILENO);
+				//close(next[WRITE_ID]);
 			}
 			background_pids = run_process(Sh, background_pids);
 			exit(1);
 		}
-		else
-		{ //perent
-			if (i != 1)
-			{
-				close(pred[0]);
-				close(next[1]);
-				int *tmp = pred;
-				pred = next;
-				next = tmp;
-			}
-			if (i != count)
-				Sh = Sh->next_command;
-		}
+
+		if (i != 0)
+			close(pred[READ_ID]);
+
+		if (i != (count - 1))
+			close(next[WRITE_ID]);
+
+		Sh = Sh->next_command;
+		int *tmp = pred;
+		pred = next;
+		next = tmp;
+
 	}
-	for (int i = 1; i <= count; i++)
+
+	for (int i = 0; i < count; i++)
 	{
 		wait(NULL);
 	}
@@ -585,13 +619,6 @@ pid_list conv(shell Sh, pid_list background_pids)
 }
 
 /*перенаправление ввода вывода*/
-/*void redir(shell Sh) {
- int fd[2];
- pipe(fd);
- if (Sh->input!=NULL){
- dup2(fd[1],1);
- }
- }*/
 
 int main()
 {
