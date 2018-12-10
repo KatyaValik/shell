@@ -372,73 +372,73 @@ pid_list check_background_processes(pid_list list)
 }
 
 /*выполнение команды старое
-pid_list run_process(str_list strings, pid_list pids)
-{
-	char** args;
-	int nargs = str_size(strings);
-	int background = 0;
-	pid_t pid;
+ pid_list run_process(str_list strings, pid_list pids)
+ {
+ char** args;
+ int nargs = str_size(strings);
+ int background = 0;
+ pid_t pid;
 
-	if (check_cd(strings))
-		return pids;
+ if (check_cd(strings))
+ return pids;
 
-	args = malloc((nargs + 1) * sizeof(char*));
-	nargs = 0;
-	while (strings != NULL)
-	{
-		args[nargs] = strings->str;
-		nargs++;
-		strings = strings->next;
-	}
+ args = malloc((nargs + 1) * sizeof(char*));
+ nargs = 0;
+ while (strings != NULL)
+ {
+ args[nargs] = strings->str;
+ nargs++;
+ strings = strings->next;
+ }
 
-	if (strcmp(args[nargs - 1], "&") == 0)
-	{
-		nargs--;
-		background = 1;
-	}
+ if (strcmp(args[nargs - 1], "&") == 0)
+ {
+ nargs--;
+ background = 1;
+ }
 
-	args[nargs] = NULL;
+ args[nargs] = NULL;
 
-	pid = fork();
-	if (!pid)
-	{
+ pid = fork();
+ if (!pid)
+ {
 
-		execvp(args[0], args);
-		fprintf( stderr, "Error executing %s: %s\n", args[0], strerror( errno));
-		exit(1);
-	}
+ execvp(args[0], args);
+ fprintf( stderr, "Error executing %s: %s\n", args[0], strerror( errno));
+ exit(1);
+ }
 
-	if (background)
-	{
-		pids = pid_add(pids, pid);
-		printf("running the background process with PID=%d\n", pid);
-	}
-	else
-	{
-		int status;
-		pid_t ret;
+ if (background)
+ {
+ pids = pid_add(pids, pid);
+ printf("running the background process with PID=%d\n", pid);
+ }
+ else
+ {
+ int status;
+ pid_t ret;
 
-		while ((ret = waitpid(pid, &status, 0)) >= 0)
-		{
-			if (ret != pid)
-				continue;
+ while ((ret = waitpid(pid, &status, 0)) >= 0)
+ {
+ if (ret != pid)
+ continue;
 
-			if (WIFEXITED(status))
-			{
-				break;
-			}
-			else if (WIFSIGNALED(status))
-			{
-				printf("process with terminated by signal %d\n", WTERMSIG(status));
-				break;
-			}
-		}
-	}
+ if (WIFEXITED(status))
+ {
+ break;
+ }
+ else if (WIFSIGNALED(status))
+ {
+ printf("process with terminated by signal %d\n", WTERMSIG(status));
+ break;
+ }
+ }
+ }
 
-	free(args);
+ free(args);
 
-	return pids;
-}*/
+ return pids;
+ }*/
 
 /*выполнение команды новое*/
 pid_list run_process(shell Sh, pid_list pids)
@@ -462,7 +462,6 @@ pid_list run_process(shell Sh, pid_list pids)
 
 	if (Sh->fn)
 		background = 1;
-
 
 	args[nargs] = NULL;
 
@@ -509,7 +508,6 @@ pid_list run_process(shell Sh, pid_list pids)
 	return pids;
 }
 
-
 /*прибить фоновые процессы*/
 void kill_background_processes(pid_list pids)
 {
@@ -540,10 +538,13 @@ pid_list conv(shell Sh, pid_list background_pids)
 	if (count == 1)
 	{
 		background_pids = run_process(Sh, background_pids);
+		return background_pids;
+
 	}
 	for (int i = 1; i <= count; i++)
 	{
-		if (i!=count) pipe(next);
+		if (i != count)
+			pipe(next);
 		pid = fork();
 		if (!pid)
 		{
@@ -553,23 +554,28 @@ pid_list conv(shell Sh, pid_list background_pids)
 				dup2(pred[0], 0);
 				close(pred[0]); //????
 			}
-			if (i == count)
+			if (i != count)
 			{
 				close(next[0]);
 				dup2(next[1], 1);
 				close(next[1]);
 			}
 			background_pids = run_process(Sh, background_pids);
+			exit(1);
 		}
-		else //perent
-		if (i != 1)
-		{
-			close(pred[0]);
+		else
+		{ //perent
+			if (i != 1)
+			{
+				close(pred[0]);
+				close(next[1]);
+				int *tmp = pred;
+				pred = next;
+				next = tmp;
+			}
+			if (i != count)
+				Sh = Sh->next_command;
 		}
-		close(next[1]);
-		int *tmp = pred;
-		pred = next;
-		next = tmp;
 	}
 	for (int i = 1; i <= count; i++)
 	{
@@ -580,12 +586,12 @@ pid_list conv(shell Sh, pid_list background_pids)
 
 /*перенаправление ввода вывода*/
 /*void redir(shell Sh) {
-	int fd[2];
-	pipe(fd);
-	if (Sh->input!=NULL){
-		dup2(fd[1],1);
-	}
-}*/
+ int fd[2];
+ pipe(fd);
+ if (Sh->input!=NULL){
+ dup2(fd[1],1);
+ }
+ }*/
 
 int main()
 {
@@ -641,7 +647,7 @@ int main()
 
 	 str_free(arguments);*/
 
-	 kill_background_processes(background_pids);
+	kill_background_processes(background_pids);
 
 	return 0;
 }
