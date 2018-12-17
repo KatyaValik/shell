@@ -221,7 +221,7 @@ void shell_free(shell Sh)
 int make_arguments(str_list* list, char* str)
 {
 	char* special_symbols[] =
-	{ ">>", ">", "<", "&", "|", "`", "$", "=" };
+	{ ">>", ">", "<", "&", "|", "`", "$", "=", ":" };
 	int position = 0;
 	int n = 0;
 	int ret = 0;
@@ -342,7 +342,7 @@ shell make_shell(str_list L)
 				L1 = L1->next;
 			}
 			L1->next = L;
-			if (strcmp(Lst->str,"`")==0)
+			if (strcmp(Lst->str, "`") == 0)
 				Lst = L1;
 			else
 				L_pred->next = L1;
@@ -350,6 +350,48 @@ shell make_shell(str_list L)
 			break;
 		}
 		L_pred = L;
+		L = L->next;
+	}
+	L = Lst;
+	while (L != NULL)
+	{
+		if (strcmp(L->str, "$") == 0)
+		{
+			L = L->next;
+			var = getenv(L->str);
+			if (var == NULL)
+			{
+				printf("'%s' not found\n", L->str);
+				return Sh;
+			}
+			L_pred = Lst;
+			while (strcmp(L_pred->next->str, "$") != 0)
+			{
+				L_pred = L_pred->next;
+			}
+			str_list List = NULL;
+			List = str_add(List, var);
+			L_pred->next = List;
+			L_pred->next->next = L->next;
+		}
+		L = L->next;
+	}
+	L = Lst;
+	while (L != NULL)
+	{
+		if (strcmp(L->str, ":") == 0)
+		{
+			L_pred = Lst;
+			while (strcmp(L_pred->next->str, ":") != 0)
+			{
+				L_pred = L_pred->next;
+			}
+			L = L->next;
+			L_pred->str = realloc(L_pred->str, strlen(L_pred->str)+strlen(L->str) + 2);
+			strcat(L_pred->str,":");
+			strcat(L_pred->str,L->str);
+			L_pred->next = L->next;
+		}
 		L = L->next;
 	}
 	L = Lst;
@@ -364,18 +406,18 @@ shell make_shell(str_list L)
 			}
 			L = L->next->next->next->next;
 		}
-		else if (strcmp(L->str, "$") == 0)
-		{
-			L = L->next;
-			var = getenv(L->str);
-			if (var == NULL)
-			{
-				printf("'%s' not found\n", L->str);
-				return Sh;
-			}
-			curr_cmd->comand = str_add(curr_cmd->comand, var);
-			L = L->next;
-		}
+		/*else if (strcmp(L->str, "$") == 0)
+		 {
+		 L = L->next;
+		 var = getenv(L->str);
+		 if (var == NULL)
+		 {
+		 printf("'%s' not found\n", L->str);
+		 return Sh;
+		 }
+		 curr_cmd->comand = str_add(curr_cmd->comand, var);
+		 L = L->next;
+		 }*/
 
 		else if (strcmp(L->str, ">") == 0)
 		{
@@ -597,7 +639,7 @@ void kill_background_processes(pid_list pids)
 {
 	pid_list iter = check_background_processes(pids); //проверим вдруг ктото уже завершился
 
-	//остальных прибъем сигналом SIGKILL
+//остальных прибъем сигналом SIGKILL
 	while (iter)
 	{
 		if (kill(iter->pid, SIGKILL) != 0)
@@ -606,7 +648,7 @@ void kill_background_processes(pid_list pids)
 		iter = iter->next;
 	}
 
-	//проверим что все убитые завершились
+//проверим что все убитые завершились
 	while ((pids = check_background_processes(pids)) != NULL)
 		usleep(10000);
 }
