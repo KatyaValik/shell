@@ -240,6 +240,23 @@ int make_arguments(str_list* list, char* str)
 	return ret;
 }
 
+/*проверка корректности ввода*/
+int check(shell Sh)
+{
+	shell Sh_start = Sh;
+	while (Sh != NULL)
+	{
+		if ((Sh->next_command != NULL) && ((Sh->input != NULL) || (Sh->output != NULL) || (Sh->output_add != NULL)))
+		{
+			printf("incorrect input\n");
+			return 1;
+		}
+		Sh = Sh->next_command;
+	}
+	Sh = Sh_start;
+	return 0;
+}
+
 /*создание структуры для выполнения команд*/
 shell make_shell(str_list L)
 {
@@ -351,7 +368,6 @@ int check_cd(str_list strings)
 	return 1;
 }
 
-
 void redir(shell Sh)
 {
 	int file;
@@ -362,17 +378,16 @@ void redir(shell Sh)
 	}
 	if (Sh->output != NULL)
 	{
-		file = open(Sh->output, O_CREAT | O_WRONLY,0660);
+		file = open(Sh->output, O_CREAT | O_WRONLY, 0660);
 		dup2(file, STDOUT_FILENO);
 	}
 	else if (Sh->output_add != NULL)
 	{
-		file = open(Sh->output_add, O_CREAT | O_APPEND|O_WRONLY,0660);
+		file = open(Sh->output_add, O_CREAT | O_APPEND | O_WRONLY, 0660);
 		dup2(file, STDOUT_FILENO);
 	}
 
 }
-
 
 /*проверка завершенных фоновых процессов*/
 pid_list check_background_processes(pid_list list)
@@ -494,7 +509,8 @@ pid_list run_process(shell Sh, pid_list pids)
 	pid = fork();
 	if (!pid)
 	{
-		if ((Sh->input!=NULL)||(Sh->output!=NULL)||(Sh->output_add!=NULL)){
+		if ((Sh->input != NULL) || (Sh->output != NULL) || (Sh->output_add != NULL))
+		{
 			redir(Sh);
 		}
 		execvp(args[0], args);
@@ -646,7 +662,10 @@ int main()
 				if (arguments != NULL)
 				{
 					Sh = make_shell(arguments);
-					background_pids = conv(Sh, background_pids);
+					if (check(Sh) == 0)
+					{
+						background_pids = conv(Sh, background_pids);
+					}
 					//print_shell(Sh);
 					str_free(arguments);
 					arguments = NULL;
