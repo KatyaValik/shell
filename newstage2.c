@@ -35,6 +35,8 @@ struct one_command
 	shell next_command;
 };
 
+static int check_cd(str_list strings);
+
 /*Добавляет эелемент списка*/
 pid_list pid_add(pid_list list, pid_t pid)
 {
@@ -151,7 +153,58 @@ int str_size(str_list list)
 
 	return size;
 }
-
+/*выполнение команды в кавычках*/
+str_list exec_sep(str_list strings)
+{
+	char** args;
+	int nargs = str_size(strings);
+	pid_t pid;
+	int fd[2];
+	str_list L = NULL;
+	char c;
+	pipe(fd);
+	args = malloc((nargs + 1) * sizeof(char*));
+	nargs = 0;
+	while (strings != NULL)
+	{
+		args[nargs] = strings->str;
+		nargs++;
+		strings = strings->next;
+	}
+	args[nargs] = NULL;
+	pid = fork();
+	if (!pid)
+	{
+		close(fd[0]);
+		dup2(fd[1], STDOUT_FILENO);
+		execvp(args[0], args);
+		fprintf( stderr, "Error executing %s: %s\n", args[0], strerror( errno));
+		exit(1);
+	}
+	char* buf = calloc(1, sizeof(char));
+	buf[0] = 0;
+	int n = 0;
+	int status;
+	waitpid(pid, &status, 0);
+	close(fd[1]);
+	while (read(fd[0], &c, sizeof(char)) > 0)
+	{
+		if ((c != ' ') && (c != '\n'))
+		{
+			buf = realloc(buf, n + 2);
+			buf[n++] = c;
+			buf[n] = 0;
+		}
+		else
+		{
+			L = str_add(L, buf);
+			n = 0;
+		}
+	}
+	close(fd[0]);
+	free(args);
+	return L;
+}
 /*удаление структуры shell*/
 void shell_free(shell Sh)
 {
@@ -168,7 +221,7 @@ void shell_free(shell Sh)
 int make_arguments(str_list* list, char* str)
 {
 	char* special_symbols[] =
-	{ ">>", ">", "<", "&", "|", "`" };
+	{ ">>", ">", "<", "&", "|", "`", "$", "=" };
 	int position = 0;
 	int n = 0;
 	int ret = 0;
@@ -244,6 +297,8 @@ int make_arguments(str_list* list, char* str)
 int check(shell Sh)
 {
 	shell Sh_start = Sh;
+	if ((Sh == NULL) || (Sh->comand == NULL))
+		return 1;
 	while (Sh != NULL)
 	{
 		if ((Sh->next_command != NULL) && ((Sh->input != NULL) || (Sh->output != NULL) || (Sh->output_add != NULL)))
@@ -257,6 +312,7 @@ int check(shell Sh)
 	return 0;
 }
 
+#define FL_OVWR		1
 /*создание структуры для выполнения команд*/
 shell make_shell(str_list L)
 {
@@ -265,9 +321,63 @@ shell make_shell(str_list L)
 	shell Sh_next;
 	shell curr_cmd = Sh;
 	int str_size;
+	char * var;
+	str_list L_pred = L;
 	while (L != NULL)
 	{
-		if (strcmp(L->str, ">") == 0)
+		if (strcmp(L->str, "`") == 0)
+		{
+			str_list L1 = NULL;
+			L = L->next;
+			while (strcmp(L->str, "`") != 0)
+			{
+				L1 = str_add(L1, L->str);
+				L = L->next;
+			}
+			L1 = exec_sep(L1);
+			L = L->next;
+			str_list L1_start = L1;
+			while (L1->next != NULL)
+			{
+				L1 = L1->next;
+			}
+			L1->next = L;
+			if (strcmp(Lst->str,"`")==0)
+				Lst = L1;
+			else
+				L_pred->next = L1;
+
+			break;
+		}
+		L_pred = L;
+		L = L->next;
+	}
+	L = Lst;
+	while (L != NULL)
+	{
+		if (strcmp(L->str, "export") == 0)
+		{
+			if (setenv(L->next->str, L->next->next->next->str, FL_OVWR) != 0)
+			{
+				fprintf(stderr, "setenv: Cannot set '%s'\n", L->next->str);
+				return Sh;
+			}
+			L = L->next->next->next->next;
+		}
+		else if (strcmp(L->str, "$") == 0)
+		{
+			L = L->next;
+			var = getenv(L->str);
+			if (var == NULL)
+			{
+				printf("'%s' not found\n", L->str);
+				return Sh;
+			}
+			curr_cmd->comand = str_add(curr_cmd->comand, var);
+			L = L->next;
+		}
+
+		else if (strcmp(L->str, ">") == 0)
 		{
 			str_size = strlen(L->next->str) + 1;
 			curr_cmd->output = malloc(sizeof(char) * str_size);
@@ -344,6 +454,7 @@ int comand_count(shell Sh)
 	}
 	return count;
 }
+
 int check_cd(str_list strings)
 {
 	char* dir; //Домашний каталог по умолчанию, если cd без аргументов
@@ -411,75 +522,6 @@ pid_list check_background_processes(pid_list list)
 
 	return list;
 }
-
-/*выполнение команды старое
- pid_list run_process(str_list strings, pid_list pids)
- {
- char** args;
- int nargs = str_size(strings);
- int background = 0;
- pid_t pid;
-
- if (check_cd(strings))
- return pids;
-
- args = malloc((nargs + 1) * sizeof(char*));
- nargs = 0;
- while (strings != NULL)
- {
- args[nargs] = strings->str;
- nargs++;
- strings = strings->next;
- }
-
- if (strcmp(args[nargs - 1], "&") == 0)
- {
- nargs--;
- background = 1;
- }
-
- args[nargs] = NULL;
-
- pid = fork();
- if (!pid)
- {
-
- execvp(args[0], args);
- fprintf( stderr, "Error executing %s: %s\n", args[0], strerror( errno));
- exit(1);
- }
-
- if (background)
- {
- pids = pid_add(pids, pid);
- printf("running the background process with PID=%d\n", pid);
- }
- else
- {
- int status;
- pid_t ret;
-
- while ((ret = waitpid(pid, &status, 0)) >= 0)
- {
- if (ret != pid)
- continue;
-
- if (WIFEXITED(status))
- {
- break;
- }
- else if (WIFSIGNALED(status))
- {
- printf("process with terminated by signal %d\n", WTERMSIG(status));
- break;
- }
- }
- }
-
- free(args);
-
- return pids;
- }*/
 
 /*выполнение команды новое*/
 pid_list run_process(shell Sh, pid_list pids)
@@ -639,8 +681,8 @@ pid_list conv(shell Sh, pid_list background_pids)
 int main()
 {
 	shell Sh = NULL;
-	pid_list background_pids = NULL;
 	str_list arguments = NULL;
+	pid_list background_pids = NULL;
 	char c;
 	int n = 0;
 	char* str = (char*) calloc(1, sizeof(char));
